@@ -190,6 +190,55 @@ fn a_failed_address_is_explained_until_the_next_attempt() {
 }
 
 #[test]
+fn failed_restored_navigation_projects_an_error_without_losing_the_saved_url() {
+    use zephium_core::ports::engine::NavigationFailureReason;
+    use zephium_ipc::{TabAvailability, TabFailureReason};
+
+    let store = Arc::new(FakeStore::default());
+    let (mut first, _, screen) = setup_with(store.clone());
+    first.handle(Command::Bootstrap);
+    let id = active_id(&screen);
+    navigate_and_commit(&mut first, id, "http://127.0.0.1:7474/");
+    first.persist();
+
+    let (mut restored, engine, screen) = setup_with(store.clone());
+    restored.handle(Command::Bootstrap);
+    assert!(engine
+        .calls()
+        .contains(&format!("create {id} http://127.0.0.1:7474/ [default]")));
+    restored.handle(Command::Engine(EngineEvent::NavigationFailureReported {
+        id,
+        reason: NavigationFailureReason::Unreachable,
+    }));
+    restored.handle(Command::Engine(EngineEvent::ViewCreationFailed { id }));
+    let tab = last(&screen)
+        .tabs
+        .into_iter()
+        .find(|tab| tab.id == id.to_string())
+        .unwrap();
+    assert_eq!(tab.url.as_deref(), Some("http://127.0.0.1:7474/"));
+    assert_eq!(tab.availability, Some(TabAvailability::Sleeping));
+    let failure = tab.failure.unwrap();
+    assert_eq!(failure.url, "http://127.0.0.1:7474/");
+    assert_eq!(failure.reason, TabFailureReason::Unreachable);
+
+    restored.handle(Command::Navigate {
+        id,
+        input: failure.url,
+    });
+    assert!(restored.items.tab(id).unwrap().failure.is_none());
+    assert!(restored.items.tab(id).unwrap().has_view());
+    restored.persist();
+    let saved = store.saved.lock().unwrap().clone().unwrap();
+    let PersistedKind::Tab { url, .. } =
+        &saved.items.iter().find(|item| item.id == id).unwrap().kind
+    else {
+        panic!("restored tab must remain persisted")
+    };
+    assert_eq!(url, "http://127.0.0.1:7474/");
+}
+
+#[test]
 fn a_link_for_another_app_waits_for_the_person() {
     use zephium_ipc::PageRequestView;
     let (mut shell, engine, screen) = setup();

@@ -464,10 +464,10 @@
             >{#snippet children(View)}<View tab={capacityTab} />{/snippet}</LazyView
           >{/if}
       </main>
-    {:else if tabs.activeTab()?.failure && !tabs.activeTab()?.url && !tabs.activeTab()?.loading && browserPage.currentPage() === null}
+    {:else if tabs.activeTab()?.failure && (!tabs.activeTab()?.url || tabs.activeTab()?.availability?.state === "sleeping") && !tabs.activeTab()?.loading && browserPage.currentPage() === null}
       {@const failedTab = tabs.activeTab()}
       {@const failure = failedTab?.failure}
-      <!-- A first load that failed: the pane says why instead of a blank new tab. -->
+      <!-- Failed first loads include restored URLs whose native view was retired. -->
       <main class="min-w-0 flex-1 ps-2">
         <div class="content-pane h-full w-full overflow-hidden">
           {#if failedTab && failure}<LazyView

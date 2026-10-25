@@ -469,14 +469,12 @@ impl Items {
     }
 
     pub fn ensure_view(&mut self, id: ItemId) -> Vec<Effect> {
-        if let Some(tab) = self.tab_mut(id) {
+        if let Some(tab) = self.tab(id) {
             if tab.content == TabContent::Web && !tab.view {
                 if let Some(url) = tab.url.clone() {
-                    tab.view = true;
-                    return vec![Effect::CreateView {
-                        id,
-                        url: url.to_string(),
-                    }];
+                    // Restoring a saved URL needs the same failure attribution
+                    // and retry reset as an explicit navigation.
+                    return self.navigate(id, url.as_str());
                 }
             }
         }
@@ -543,8 +541,19 @@ impl Items {
     /// create a controller. The next explicit navigation/activation can then
     /// retry instead of leaving an unrecoverable blank tab.
     pub fn view_creation_failed(&mut self, id: ItemId) {
-        self.pending_navigations.remove(&id);
+        let requested_url = self
+            .pending_navigations
+            .remove(&id)
+            .and_then(|pending| pending.url);
         if let Some(tab) = self.tab_mut(id) {
+            if tab.failure.is_none() {
+                if let Some(url) = requested_url.or_else(|| tab.url.clone()) {
+                    tab.failure = Some(Box::new(crate::item::NavigationFailure {
+                        url,
+                        reason: crate::ports::engine::NavigationFailureReason::Other,
+                    }));
+                }
+            }
             tab.view = false;
             tab.capture = None;
             tab.loading = false;
@@ -928,6 +937,52 @@ mod tests {
         let script = Url::parse("javascript:alert(1)").unwrap();
         assert!(!items.insert_unloaded_tab(id(2), kept, script, "x"));
         assert!(items.tab(id(2)).is_none());
+    }
+
+    #[test]
+    fn restored_view_failure_preserves_the_url_and_can_be_retried() {
+        use crate::ports::engine::NavigationFailureReason;
+
+        let mut items = Items::default();
+        let url = Url::parse("http://127.0.0.1:7474/").unwrap();
+        assert!(items.insert_unloaded_tab(id(1), today(), url.clone(), "Local page"));
+        assert_eq!(items.ensure_view(id(1)).len(), 1);
+        assert!(items.record_navigation_failure(id(1), NavigationFailureReason::Unreachable));
+        items.view_creation_failed(id(1));
+
+        let tab = items.tab(id(1)).unwrap();
+        assert_eq!(tab.url.as_ref(), Some(&url));
+        assert!(!tab.has_view());
+        assert!(!tab.loading);
+        assert_eq!(tab.failure.as_ref().unwrap().url, url);
+        assert_eq!(
+            tab.failure.as_ref().unwrap().reason,
+            NavigationFailureReason::Unreachable
+        );
+        assert_eq!(items.ensure_view(id(1)).len(), 1);
+        assert!(items.tab(id(1)).unwrap().failure.is_none());
+        assert!(items.ensure_view(id(1)).is_empty());
+        items.set_committed_url_str(id(1), url.as_str());
+        assert!(items.pending_navigation(id(1)).is_none());
+    }
+
+    #[test]
+    fn creation_failure_without_native_reason_still_explains_the_requested_url() {
+        use crate::ports::engine::NavigationFailureReason;
+
+        let mut items = Items::default();
+        assert!(items.insert_tab(id(1), today()));
+        items.navigate(id(1), "example.com");
+        items.view_creation_failed(id(1));
+        let tab = items.tab(id(1)).unwrap();
+        assert!(
+            tab.url.is_none(),
+            "failure must not commit the requested URL"
+        );
+        let failure = tab.failure.as_ref().unwrap();
+        assert_eq!(failure.url.as_str(), "https://example.com/");
+        assert_eq!(failure.reason, NavigationFailureReason::Other);
+        assert!(items.pending_navigation(id(1)).is_none());
     }
 
     #[test]
