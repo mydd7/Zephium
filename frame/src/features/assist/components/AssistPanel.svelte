@@ -150,6 +150,7 @@
 >
   <Frame {...viewProps} caption={false} scrolls={false} closable={false}>
     {#snippet actions()}
+      <IconButton icon={Cancel01Icon} label={m.tool_close()} onclick={viewProps.onclose} />
       <IconButton
         icon={PencilEdit02Icon}
         label={m.assist_new()}

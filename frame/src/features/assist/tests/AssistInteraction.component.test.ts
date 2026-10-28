@@ -142,6 +142,16 @@ test("a suggestion sends itself with the page", async () => {
   );
 });
 
+test("the header offers a visible close button even while a reply is working", async () => {
+  const onclose = vi.fn();
+  native.status = status([person(1, "Summarize"), reply(2, [], { state: "working", cost: null })]);
+  const screen = await render(PanelStage, { profile: PROFILE, onclose });
+  const close = screen.getByRole("button", { name: "Close tool", exact: true });
+  await expect.element(close).toBeVisible();
+  await close.click();
+  expect(onclose).toHaveBeenCalledOnce();
+});
+
 test("while a reply works, Send is Stop, and Escape stops it before closing anything", async () => {
   const onclose = vi.fn();
   native.status = status([person(1, "Summarize"), reply(2, [], { state: "working", cost: null })]);
