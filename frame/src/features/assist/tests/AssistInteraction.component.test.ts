@@ -98,11 +98,12 @@ beforeEach(() => {
 async function open(next: PageAssistStatusV1) {
   native.status = next;
   await page.viewport(400, 820);
-  const screen = await render(PanelStage, { profile: PROFILE });
+  const onclose = vi.fn();
+  const screen = await render(PanelStage, { profile: PROFILE, onclose });
   const field = screen.getByRole("textbox", { name: "Ask Zephium…" });
   await expect.element(field).toBeVisible();
   await expect.poll(() => native.statusCalls).toBeGreaterThan(0);
-  return { screen, field };
+  return { screen, field, onclose };
 }
 
 test("Enter sends with the page in front; Shift+Enter only adds a line; × leaves the page out", async () => {
@@ -313,7 +314,7 @@ test("the picker attaches what was picked; × detaches it; Escape cancels a pick
     pick: { tab: TAB, pick: "7", label: "Story list", host: "news.ycombinator.com" },
     fault: null,
   });
-  const { screen, field } = await open(status());
+  const { screen, field, onclose } = await open(status());
   const pickFromMenu = async () => {
     await screen.getByRole("button", { name: "Add" }).click();
     await page.getByRole("menuitem", { name: "Pick an element" }).click();
@@ -347,8 +348,12 @@ test("the picker attaches what was picked; × detaches it; Escape cancels a pick
   await expect
     .element(screen.getByRole("status").filter({ hasText: "Esc to cancel" }))
     .toBeVisible();
+  const outside = document.createElement("button");
+  screen.container.append(outside);
+  outside.focus();
   await userEvent.keyboard("{Escape}");
   await expect.poll(() => native.pickCancel.mock.calls.at(-1)).toEqual([TAB]);
+  expect(onclose).not.toHaveBeenCalled();
 });
 
 test("history lists past conversations, opens one and deletes one", async () => {

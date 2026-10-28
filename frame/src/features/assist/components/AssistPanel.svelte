@@ -141,6 +141,11 @@
 <svelte:window
   onkeydown={(event) => {
     if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+    if (session?.picking) {
+      event.preventDefault();
+      session.cancelPick();
+      return;
+    }
     if (view !== "thread") view = "thread";
     else viewProps.onclose();
   }}
