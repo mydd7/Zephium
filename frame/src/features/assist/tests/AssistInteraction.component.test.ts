@@ -142,6 +142,21 @@ test("a suggestion sends itself with the page", async () => {
   );
 });
 
+test("Escape closes the panel when chrome focus is outside its content", async () => {
+  const onclose = vi.fn();
+  native.status = status();
+  const screen = await render(PanelStage, { profile: PROFILE, onclose });
+  const outside = document.createElement("button");
+  screen.container.append(outside);
+  outside.focus();
+  outside.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, isComposing: true }),
+  );
+  expect(onclose).not.toHaveBeenCalled();
+  await userEvent.keyboard("{Escape}");
+  expect(onclose).toHaveBeenCalledOnce();
+});
+
 test("the header offers a visible close button even while a reply is working", async () => {
   const onclose = vi.fn();
   native.status = status([person(1, "Summarize"), reply(2, [], { state: "working", cost: null })]);
