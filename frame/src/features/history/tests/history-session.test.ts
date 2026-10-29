@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { HistoryResponse, HistoryVisitView } from "$shared/ipc/bindings";
 import { HistorySession } from "../lib/history-session.svelte";
 
@@ -9,6 +9,45 @@ vi.mock("$shared/ipc/bindings", async () => {
 });
 
 beforeEach(() => vi.resetAllMocks());
+afterEach(() => vi.useRealTimers());
+
+test.each(["page", "error"])(
+  "a prior query's %s reply is ignored during debounce",
+  async (kind) => {
+    vi.useFakeTimers();
+    const oldVisit: HistoryVisitView = {
+      id: "1",
+      url: "https://old.example/",
+      title: "Old",
+      visited_at: "1",
+      icon: null,
+    };
+    let finish!: (response: HistoryResponse) => void;
+    native.call.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const session = new HistorySession("profile");
+    const pending = session.start("old");
+    session.search("new");
+    finish(
+      kind === "page"
+        ? { kind: "page", visits: [oldVisit], next: "1" }
+        : { kind: "error", error: "unavailable" },
+    );
+    await pending;
+    expect(session.visits).toEqual([]);
+    expect(session.error).toBeNull();
+    expect(session.exhausted).toBe(true);
+    const next = { ...oldVisit, id: "2", title: "New", url: "https://new.example/" };
+    native.call.mockResolvedValueOnce({ kind: "page", visits: [next], next: null });
+    await vi.advanceTimersByTimeAsync(180);
+    expect(native.call).toHaveBeenLastCalledWith(
+      "profile",
+      expect.objectContaining({ kind: "page", query: "new", before: null }),
+    );
+    expect(session.visits).toEqual([next]);
+    expect(session.loading).toBe(false);
+    session.stop();
+  },
+);
 
 test("a listing begun before Forget cannot bring deleted visits back", async () => {
   const visit: HistoryVisitView = {
