@@ -11,6 +11,31 @@ vi.mock("$shared/ipc/bindings", async () => {
 beforeEach(() => vi.resetAllMocks());
 afterEach(() => vi.useRealTimers());
 
+test("a new search cannot paginate with the previous query's cursor", async () => {
+  vi.useFakeTimers();
+  const visit: HistoryVisitView = {
+    id: "1",
+    url: "https://old.example/",
+    title: "Old",
+    visited_at: "1",
+    icon: null,
+  };
+  native.call.mockResolvedValueOnce({ kind: "page", visits: [visit], next: "1" });
+  const session = new HistorySession("profile");
+  await session.start("old");
+  session.search("new");
+  native.call.mockResolvedValueOnce({ kind: "page", visits: [], next: null });
+  await session.reload(true);
+  expect(native.call).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(180);
+  expect(native.call).toHaveBeenLastCalledWith(
+    "profile",
+    expect.objectContaining({ kind: "page", query: "new", before: null }),
+  );
+  expect(session.visits).toEqual([]);
+  session.stop();
+});
+
 test.each(["page", "error"])(
   "a prior query's %s reply is ignored during debounce",
   async (kind) => {

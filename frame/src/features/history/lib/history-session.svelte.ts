@@ -77,6 +77,7 @@ export class HistorySession {
 
   search(value: string) {
     this.listing += 1;
+    this.cursor = null;
     this.query = value.slice(0, 512);
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => void this.reload(), SEARCH_DEBOUNCE_MS);
