@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import type { HistoryResponse, HistoryVisitView } from "$shared/ipc/bindings";
-import { HistorySession } from "../lib/history-session.svelte";
+import { HistorySession, historySession } from "../lib/history-session.svelte";
 
 const native = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("$shared/ipc/bindings", async () => {
@@ -46,3 +46,35 @@ test("stopping the session while Forget is pending does not start another listin
   expect(native.call).toHaveBeenCalledTimes(2);
   expect(session.error).toBeNull();
 });
+
+test.each(["forget", "clear"] as const)(
+  "closing during %s leaves the cached session usable",
+  async (kind) => {
+    const host = `closing-${kind}`;
+    const session = historySession("profile", host);
+    native.call.mockResolvedValueOnce({ kind: "page", visits: [], next: null });
+    await session.start();
+    native.call.mockReturnValueOnce(new Promise(() => {}));
+    const pending = kind === "forget" ? session.forget(["https://example.com/"]) : session.clear();
+    expect(session.busy).toBe(true);
+    session.stop();
+    await pending;
+    expect(session.busy).toBe(false);
+    expect(session.error).toBeNull();
+    expect(historySession("profile", host)).toBe(session);
+    native.call.mockResolvedValueOnce({ kind: "page", visits: [], next: null });
+    await session.start();
+    const previousCalls = native.call.mock.calls.length;
+    native.call
+      .mockResolvedValueOnce({ kind: "removed", count: 1 })
+      .mockResolvedValueOnce({ kind: "page", visits: [], next: null });
+    await session.clear();
+    expect(native.call.mock.calls.slice(previousCalls).map(([, call]) => call.kind)).toEqual([
+      "clear",
+      "page",
+    ]);
+    expect(session.busy).toBe(false);
+    expect(session.error).toBeNull();
+    session.stop();
+  },
+);

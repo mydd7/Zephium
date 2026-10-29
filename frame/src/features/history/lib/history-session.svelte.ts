@@ -73,6 +73,7 @@ export class HistorySession {
     this.range = "everything";
     this.error = null;
     this.loading = false;
+    this.busy = false;
   }
 
   search(value: string) {
@@ -138,7 +139,9 @@ export class HistorySession {
   async clear() {
     if (this.busy) return;
     this.busy = true;
+    const lifetime = this.lifetime;
     const response = await this.call({ kind: "clear", range: this.range });
+    if (lifetime.signal.aborted) return;
     this.busy = false;
     if (response?.kind === "removed") {
       this.cursor = null;
